@@ -1,6 +1,6 @@
 from typing import List, Tuple
-# from local_driver import Alg3D, Board # ローカル検証用
-from framework import Alg3D, Board # 本番用
+from local_driver import Alg3D, Board # ローカル検証用
+# from framework import Alg3D, Board # 本番用
 
 class MyAI(Alg3D):
     def get_move(
@@ -217,10 +217,79 @@ class MyAI(Alg3D):
         print("📍 理由: フォールバック")
     
     def print_position_scores(self, board: Board, player: int) -> None:
-        """各マスの重み（点数）を表示"""
-        print(f"\n🎯 プレイヤー{player}の各マス重み（点数）:")
-        print("  x→   0 1 2 3    （値＝重み点数）")
+        """各マスの重み（点数）を詳細表示"""
+        print(f"\n🎯 プレイヤー{player}の各マス重み詳細:")
         
+        # 各重みの詳細を表示
+        print("\n📊 重み詳細:")
+        print("  x→   0 1 2 3    （値＝各重みの点数）")
+        
+        # 1. アクセス可能ライン数
+        print("\n1️⃣ アクセス可能ライン数 (1ライン=10点):")
+        for y in range(3, -1, -1):
+            print(f"y={y} |", end=" ")
+            for x in range(4):
+                if self.can_place_stone(board, x, y):
+                    z = self.get_height(board, x, y)
+                    lines = self.count_potential_lines(board, x, y, z, player)
+                    print(f"{lines*10:2d}", end=" ")
+                else:
+                    print(" .", end=" ")
+            print()
+        
+        # 2. 中央性
+        print("\n2️⃣ 中央性 (中央ほど高い, 最大20点):")
+        for y in range(3, -1, -1):
+            print(f"y={y} |", end=" ")
+            for x in range(4):
+                if self.can_place_stone(board, x, y):
+                    center_distance = abs(x - 1.5) + abs(y - 1.5)
+                    center_bonus = max(0, 4 - center_distance) * 5
+                    print(f"{int(center_bonus):2d}", end=" ")
+                else:
+                    print(" .", end=" ")
+            print()
+        
+        # 3. 高さ
+        print("\n3️⃣ 高さ (1段階=3点):")
+        for y in range(3, -1, -1):
+            print(f"y={y} |", end=" ")
+            for x in range(4):
+                if self.can_place_stone(board, x, y):
+                    z = self.get_height(board, x, y)
+                    height_bonus = z * 3
+                    print(f"{height_bonus:2d}", end=" ")
+                else:
+                    print(" .", end=" ")
+            print()
+        
+        # 4. 角の位置
+        print("\n4️⃣ 角の位置 (角=15点ボーナス):")
+        for y in range(3, -1, -1):
+            print(f"y={y} |", end=" ")
+            for x in range(4):
+                if self.can_place_stone(board, x, y):
+                    corner_bonus = 15 if (x == 0 or x == 3) and (y == 0 or y == 3) else 0
+                    print(f"{corner_bonus:2d}", end=" ")
+                else:
+                    print(" .", end=" ")
+            print()
+        
+        # 5. 相手妨害
+        print("\n5️⃣ 相手妨害 (相手の石1個=8点):")
+        for y in range(3, -1, -1):
+            print(f"y={y} |", end=" ")
+            for x in range(4):
+                if self.can_place_stone(board, x, y):
+                    z = self.get_height(board, x, y)
+                    opponent_stones = self.count_opponent_stones_in_lines(board, x, y, z, player)
+                    print(f"{opponent_stones*8:2d}", end=" ")
+                else:
+                    print(" .", end=" ")
+            print()
+        
+        # 6. 合計
+        print("\n🎯 合計点数:")
         for y in range(3, -1, -1):
             print(f"y={y} |", end=" ")
             for x in range(4):
