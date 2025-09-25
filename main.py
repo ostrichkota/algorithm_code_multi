@@ -1,6 +1,6 @@
 from typing import List, Tuple
-from local_driver import Alg3D, Board # ローカル検証用
-# from framework import Alg3D, Board # 本番用
+# from local_driver import Alg3D, Board # ローカル検証用
+from framework import Alg3D, Board # 本番用
 
 class MyAI(Alg3D):
     def get_move(
