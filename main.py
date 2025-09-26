@@ -759,7 +759,7 @@ class MyAI(Alg3D):
     def evaluate_position(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
         """指定位置の重み（点数）を計算"""
         # 再帰の深さ制限（4手先まで）
-        if depth >= 4:
+        if depth >= 6:
             return 0
         
         # depth別の重み設定
