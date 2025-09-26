@@ -1,6 +1,6 @@
 from typing import List, Tuple
-from local_driver import Alg3D, Board # ローカル検証用
-# from framework import Alg3D, Board # 本番用
+# from local_driver import Alg3D, Board # ローカル検証用
+from framework import Alg3D, Board # 本番用
 
 class MyAI(Alg3D):
     def get_move(
@@ -686,96 +686,111 @@ class MyAI(Alg3D):
         
         return max_score if max_score > -1 else 0
     
-    def calculate_reward(self, board: Board, x: int, y: int, z: int, player: int) -> int:
-        """指定位置の報酬を計算"""
-        reward = 0
+    def evaluate_position(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
+        """指定位置の重み（点数）を計算"""
+        score = 0
+        
+        # 再帰の深さ制限（2手先まで）
+        if depth >= 3:
+            return score
+        
+        # depth別の重み設定
+        is_my_turn = (depth % 2 == 0)  # 自分の手（depth偶数）か相手の手（depth奇数）か
+        
+        # 減衰率の計算
+        decay_rate = 0.8 ** depth  # depth=0: 1.0, depth=1: 0.8
         
         # 1. アクセス可能なライン数による基本点
         lines = self.count_potential_lines(board, x, y, z, player)
-        reward += lines * 2  # 1ライン = 2点
+        score += lines * 2 * decay_rate  # 1ライン = 2点 * 減衰率
         
-        # 2. 方向別の石の数計算
+        # 2. 方向別の石の数計算と重み付け
         my_accessible, opponent_accessible, mixed = self.classify_directions(board, x, y, z, player)
         
         # 2-1. 自分のアクセスライン上の自分の石の数加点
         my_stones = self.count_stones_in_directions(board, x, y, z, my_accessible, player)
-        reward += my_stones * 2  # 自分の石1個 = 2点
+        if is_my_turn:
+            score += my_stones * 2 * decay_rate  # 自分の手: 自分の石1個 = 2点 * 減衰率
+        else:
+            score += my_stones * 2 * decay_rate  # 相手の手: 自分の石1個 = 2点 * 減衰率
         
         # 2-2. 相手のアクセスライン上の相手の石の数による段階的加点
         opponent_stones = self.count_stones_in_directions(board, x, y, z, opponent_accessible, 3 - player)
         if opponent_stones > 0:  # 相手の石のみ
             # 1つ目は2点、2つ目は4点（合計6点）、3つ目は6点（合計12点）
             for i in range(opponent_stones):
-                reward += (i + 1) * 2  # 段階的加点
+                if is_my_turn:
+                    score += (i + 1) * 2 * decay_rate  # 自分の手: 段階的加点 * 減衰率
+                else:
+                    score += (i + 1) * 2 * decay_rate  # 相手の手: 段階的加点 * 減衰率
         
         # 2-3. 混在ライン上の石による加点・減点
         mixed_my_stones = self.count_stones_in_directions(board, x, y, z, mixed, player)
         mixed_opponent_stones = self.count_stones_in_directions(board, x, y, z, mixed, 3 - player)
         
-        reward += mixed_my_stones * 2  # 自分の石による加点
-        reward -= mixed_opponent_stones * 2  # 相手の石による減点
+        # 自分の石による加点
+        if mixed_my_stones > 0:
+            if is_my_turn:
+                score += mixed_my_stones * 2 * decay_rate  # 自分の手: 自分の石1個 = 2点加点 * 減衰率
+            else:
+                score += mixed_my_stones * 2 * decay_rate  # 相手の手: 自分の石1個 = 2点加点 * 減衰率
+        
+        # 相手の石による減点
+        if mixed_opponent_stones > 0:
+            if is_my_turn:
+                score -= mixed_opponent_stones * 2 * decay_rate  # 自分の手: 相手の石1個 = 2点減点 * 減衰率
+            else:
+                score -= mixed_opponent_stones * 2 * decay_rate  # 相手の手: 相手の石1個 = 2点減点 * 減衰率
         
         # 3. 角と中央の4マスの位置ボーナス
         if (x == 0 or x == 3) and (y == 0 or y == 3):  # 角の4マス
-            reward += 2
+            if is_my_turn:
+                score += 2 * decay_rate  # 自分の手: 角 = 2点ボーナス * 減衰率
+            else:
+                score += 2 * decay_rate  # 相手の手: 角 = 2点ボーナス * 減衰率
         elif (x == 1 or x == 2) and (y == 1 or y == 2):  # 中央の4マス
-            reward += 2
+            if is_my_turn:
+                score += 2 * decay_rate  # 自分の手: 中央 = 2点ボーナス * 減衰率
+            else:
+                score += 2 * decay_rate  # 相手の手: 中央 = 2点ボーナス * 減衰率
         
         # 4. ダブルリーチ報酬（自分の石が2個以上あるラインが複数ある場合）
         double_reach_lines = self.count_double_reach_lines(board, x, y, z, player)
         if double_reach_lines >= 2:  # 2個目以降は100点加点
-            reward += (double_reach_lines - 1) * 100  # 2個目以降=100点
+            for i in range(1, double_reach_lines):  # 2個目から計算
+                if is_my_turn:
+                    score += 100 * decay_rate  # 自分の手: 2個目以降=100点 * 減衰率
+                else:
+                    score += 100 * decay_rate   # 相手の手: 2個目以降=100点 * 減衰率
         
         # 5. ダブルリーチ妨害（相手の石が2個以上あるラインが複数ある場合）
         opponent_double_reach_lines = self.count_opponent_double_reach_lines(board, x, y, z, player)
         if opponent_double_reach_lines >= 2:  # 2個目以降は100点加点
-            reward += (opponent_double_reach_lines - 1) * 100  # 2個目以降=100点
+            for i in range(1, opponent_double_reach_lines):  # 2個目から計算
+                if is_my_turn:
+                    score += 100 * decay_rate  # 自分の手: 2個目以降=100点 * 減衰率
+                else:
+                    score += 100 * decay_rate   # 相手の手: 2個目以降=100点 * 減衰率
         
-        # 6. 罠回避（相手の勝利手を避ける）
+        # 6. 罠回避（統合版：勝利手と最大点数を100点換算で減点）
         opponent_winning_moves = self.check_opponent_winning_moves_after_my_move(board, x, y, z, player)
+        
+        # 勝利手がある場合は大幅減点
         if opponent_winning_moves > 0:
-            reward -= opponent_winning_moves * 100  # 勝利手1個=100点減点
+            if is_my_turn:
+                score -= opponent_winning_moves * 100 * decay_rate  # 自分の手: 相手の勝利手1個 = 100点減点 * 減衰率
+            else:
+                score -= opponent_winning_moves * 100 * decay_rate   # 相手の手: 相手の勝利手1個 = 100点減点 * 減衰率
+        else:
+            # 再帰を避けるため、depth制限内でのみ最大点数を計算
+            if depth < 2:
+                opponent_max_score = self.get_opponent_max_score_after_my_move(board, x, y, z, player, depth + 1)
+                if is_my_turn:
+                    score -= opponent_max_score * 0.5 * decay_rate  # 自分の手: 相手の最大点数 * 0.5を減点 * 減衰率
+                else:
+                    score -= opponent_max_score * 0.5 * decay_rate   # 相手の手: 相手の最大点数 * 0.5を減点 * 減衰率
         
-        return reward
-    
-    def get_max_opponent_reward(self, board: Board, x: int, y: int, z: int, opponent: int, depth: int = 0) -> int:
-        """相手が得られる最大報酬を計算"""
-        # 仮想的に自分の石を置く
-        temp_board = [[[board[z][y][x] for x in range(4)] for y in range(4)] for z in range(4)]
-        temp_board[z][y][x] = 3 - opponent  # 自分の石を置く
-        
-        max_reward = 0
-        
-        # 相手の全手を試して最大報酬を取得
-        for opp_x in range(4):
-            for opp_y in range(4):
-                if self.can_place_stone(temp_board, opp_x, opp_y):
-                    opp_z = self.get_height(temp_board, opp_x, opp_y)
-                    # 修正: evaluate_position を再帰呼び出し
-                    opponent_reward = self.evaluate_position(temp_board, opp_x, opp_y, opp_z, opponent, depth + 1)
-                    max_reward = max(max_reward, opponent_reward)
-        
-        return max_reward
-    
-    def evaluate_position(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
-        """指定位置の重み（点数）を計算"""
-        # 再帰の深さ制限（4手先まで）
-        if depth >= 3:
-            return 0
-        
-        # 減衰率の計算
-        decay_rate = 0.9 ** depth  # depth=0: 1.0, depth=1: 0.9, depth=2: 0.81, depth=3: 0.729
-        
-        # 自分の報酬を計算
-        my_reward = self.calculate_reward(board, x, y, z, player)
-        
-        # 相手の最大報酬を計算（常に再帰）
-        opponent = 3 - player
-        max_opponent_reward = self.get_max_opponent_reward(board, x, y, z, opponent, depth)
-        
-        # 自分の報酬 - 相手の最大報酬（重み付き）
-        result = my_reward - max_opponent_reward * 0.5
-        return result * decay_rate
+        return score
     
     def find_highest_line_access_move(self, board: Board, player: int):
         """最も高い重み（点数）の位置を探す"""
