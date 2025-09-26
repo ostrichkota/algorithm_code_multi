@@ -691,7 +691,7 @@ class MyAI(Alg3D):
         score = 0
         
         # 再帰の深さ制限（2手先まで）
-        if depth >= 3:
+        if depth >= 2:
             return score
         
         # depth別の重み設定
