@@ -356,18 +356,28 @@ class MyAI(Alg3D):
                     print(" .", end=" ")
             print()
         
-        # 3. 角と中央の4マスの位置ボーナス
-        print("\n3️⃣ 角と中央の4マスの位置ボーナス (2点):")
+        # 3. 位置ボーナス
+        print("\n3️⃣ 位置ボーナス (角:2点, 中央:2点, 中央高さ:2点):")
         for y in range(3, -1, -1):
             print(f"y={y} |", end=" ")
             for x in range(4):
                 if self.can_place_stone(board, x, y):
-                    if (x == 0 or x == 3) and (y == 0 or y == 3):  # 角の4マス
-                        print("  2", end=" ")
-                    elif (x == 1 or x == 2) and (y == 1 or y == 2):  # 中央の4マス
-                        print("  2", end=" ")
-                    else:
-                        print("  0", end=" ")
+                    z = self.get_height(board, x, y)
+                    position_bonus = 0
+                    
+                    # 角の場合は2点
+                    if (x == 0 or x == 3) and (y == 0 or y == 3):
+                        position_bonus += 2
+                    
+                    # (x == 1 or x == 2) and (y == 1 or y == 2) で2点
+                    if (x == 1 or x == 2) and (y == 1 or y == 2):
+                        position_bonus += 2
+                    
+                    # (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2) でさらに2点
+                    if (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2):
+                        position_bonus += 2
+                    
+                    print(f"{position_bonus:2d}", end=" ")
                 else:
                     print(" .", end=" ")
             print()
@@ -742,17 +752,22 @@ class MyAI(Alg3D):
             else:
                 score -= mixed_opponent_stones * 2 * decay_rate  # 相手の手: 相手の石1個 = 2点減点 * 減衰率
         
-        # 3. 角と中央の4マスの位置ボーナス
-        if (x == 0 or x == 3) and (y == 0 or y == 3):  # 角の4マス
-            if is_my_turn:
-                score += 2 * decay_rate  # 自分の手: 角 = 2点ボーナス * 減衰率
-            else:
-                score += 2 * decay_rate  # 相手の手: 角 = 2点ボーナス * 減衰率
-        elif (x == 1 or x == 2) and (y == 1 or y == 2):  # 中央の4マス
-            if is_my_turn:
-                score += 2 * decay_rate  # 自分の手: 中央 = 2点ボーナス * 減衰率
-            else:
-                score += 2 * decay_rate  # 相手の手: 中央 = 2点ボーナス * 減衰率
+        # 3. 位置ボーナス
+        position_bonus = 0
+        
+        # 角の場合は2点
+        if (x == 0 or x == 3) and (y == 0 or y == 3):
+            position_bonus += 2
+        
+        # (x == 1 or x == 2) and (y == 1 or y == 2) で2点
+        if ((x == 1 or x == 2) and (y == 1 or y == 2)) or ((x == 1 or x == 2) and (z == 1 or z == 2)) or ((y == 1 or y == 2) and (z == 1 or z == 2)):
+            position_bonus += 2
+        
+        # (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2) でさらに2点
+        if (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2):
+            position_bonus += 2
+        
+        score += position_bonus * decay_rate
         
         # 4. ダブルリーチ報酬（自分の石が2個以上あるラインが複数ある場合）
         double_reach_lines = self.count_double_reach_lines(board, x, y, z, player)
