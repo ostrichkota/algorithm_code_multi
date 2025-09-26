@@ -766,7 +766,7 @@ class MyAI(Alg3D):
         is_my_turn = (depth % 2 == 0)  # 自分の手（depth偶数）か相手の手（depth奇数）か
         
         # 減衰率の計算
-        decay_rate = 0.9 ** depth  # depth=0: 1.0, depth=1: 0.8, depth=2: 0.64, depth=3: 0.512
+        decay_rate = 1.1 ** depth  # depth=0: 1.0, depth=1: 0.8, depth=2: 0.64, depth=3: 0.512
         
         if is_my_turn:
             # 自分のターン: 報酬を加点
