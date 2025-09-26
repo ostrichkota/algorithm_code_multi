@@ -758,15 +758,15 @@ class MyAI(Alg3D):
     
     def evaluate_position(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
         """指定位置の重み（点数）を計算"""
-        # 再帰の深さ制限（3手先まで）
-        if depth >= 3:
+        # 再帰の深さ制限（4手先まで）
+        if depth >= 4:
             return 0
         
         # depth別の重み設定
         is_my_turn = (depth % 2 == 0)  # 自分の手（depth偶数）か相手の手（depth奇数）か
         
         # 減衰率の計算
-        decay_rate = 0.8 ** depth  # depth=0: 1.0, depth=1: 0.8, depth=2: 0.64
+        decay_rate = 0.9 ** depth  # depth=0: 1.0, depth=1: 0.8, depth=2: 0.64, depth=3: 0.512
         
         if is_my_turn:
             # 自分のターン: 報酬を加点
