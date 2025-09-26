@@ -3,6 +3,12 @@ from typing import List, Tuple
 from framework import Alg3D, Board # 本番用
 
 class MyAI(Alg3D):
+    def __init__(self):
+        """AI初期化（メモリ効率化のためキャッシュを追加）"""
+        self._evaluation_cache = {}  # 評価結果のキャッシュ
+        self._cache_hits = 0
+        self._cache_misses = 0
+    
     def get_move(
         self,
         board: Board, # 盤面情報
@@ -27,6 +33,12 @@ class MyAI(Alg3D):
         
         # 可視化: AIの選択理由を表示
         self.print_move_reason(board, player, move)
+        
+        # キャッシュ統計を表示（デバッグ用）
+        total_calls = self._cache_hits + self._cache_misses
+        if total_calls > 0:
+            hit_rate = self._cache_hits / total_calls * 100
+            print(f"\n💾 キャッシュ統計: ヒット率 {hit_rate:.1f}% ({self._cache_hits}/{total_calls})")
         
         return move
 
@@ -299,13 +311,13 @@ class MyAI(Alg3D):
                 if self.can_place_stone(board, x, y):
                     z = self.get_height(board, x, y)
                     lines = self.count_potential_lines(board, x, y, z, player)
-                    print(f"{lines*2:2d}", end=" ")
+                    print(f"{lines*1:2d}", end=" ")
                 else:
                     print(" .", end=" ")
             print()
         
-        # 2. アクセスライン上の自分の石の数
-        print("\n2️⃣ アクセスライン上の自分の石の数 (1石=2点):")
+        # 2. アクセスライン上の自分の石の数（距離重み付け）
+        print("\n2️⃣ アクセスライン上の自分の石の数 (距離1=6点, 距離2=4点, 距離3=2点):")
         for y in range(3, -1, -1):
             print(f"y={y} |", end=" ")
             for x in range(4):
@@ -356,28 +368,18 @@ class MyAI(Alg3D):
                     print(" .", end=" ")
             print()
         
-        # 3. 位置ボーナス
-        print("\n3️⃣ 位置ボーナス (角:2点, 中央:2点, 中央高さ:2点):")
+        # 3. 角と中央の4マスの位置ボーナス
+        print("\n3️⃣ 角と中央の4マスの位置ボーナス (2点):")
         for y in range(3, -1, -1):
             print(f"y={y} |", end=" ")
             for x in range(4):
                 if self.can_place_stone(board, x, y):
-                    z = self.get_height(board, x, y)
-                    position_bonus = 0
-                    
-                    # 角の場合は2点
-                    if (x == 0 or x == 3) and (y == 0 or y == 3):
-                        position_bonus += 2
-                    
-                    # (x == 1 or x == 2) and (y == 1 or y == 2) で2点
-                    if (x == 1 or x == 2) and (y == 1 or y == 2):
-                        position_bonus += 2
-                    
-                    # (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2) でさらに2点
-                    if (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2):
-                        position_bonus += 2
-                    
-                    print(f"{position_bonus:2d}", end=" ")
+                    if (x == 0 or x == 3) and (y == 0 or y == 3):  # 角の4マス
+                        print("  2", end=" ")
+                    elif (x == 1 or x == 2) and (y == 1 or y == 2):  # 中央の4マス
+                        print("  2", end=" ")
+                    else:
+                        print("  0", end=" ")
                 else:
                     print(" .", end=" ")
             print()
@@ -516,8 +518,8 @@ class MyAI(Alg3D):
         return opponent_stones
     
     def count_own_stones_in_lines(self, board: Board, x: int, y: int, z: int, player: int) -> int:
-        """指定位置に石を置いた時に、アクセスできるライン上の自分の石の数をカウント"""
-        own_stones = 0
+        """指定位置に石を置いた時に、アクセスできるライン上の自分の石を距離に応じて重み付けしてカウント"""
+        weighted_score = 0
         accessible_directions = self.get_accessible_directions(board, x, y, z, player)
         
         for dx, dy, dz in accessible_directions:
@@ -545,16 +547,19 @@ class MyAI(Alg3D):
                 else:
                     break
             
-            # このライン上で自分の石をカウント
+            # このライン上で自分の石を距離に応じて重み付けしてカウント
             for i in range(-max_neg, max_pos + 1):
                 if i == 0:
                     continue  # 自分の位置はスキップ
                 nx, ny, nz = x + i*dx, y + i*dy, z + i*dz
                 if 0 <= nx < 4 and 0 <= ny < 4 and 0 <= nz < 4:
                     if board[nz][ny][nx] == player:
-                        own_stones += 1
+                        distance = abs(i)  # 距離（1, 2, 3）
+                        # 距離が近いほど高い重み: 距離1=3点, 距離2=2点, 距離3=1点
+                        weight = 4 - distance  # 4-1=3, 4-2=2, 4-3=1
+                        weighted_score += weight
         
-        return own_stones
+        return weighted_score
     
     def count_double_reach_lines(self, board: Board, x: int, y: int, z: int, player: int) -> int:
         """指定位置に石を置いた時に、自分の石が2個以上あるアクセスライン数をカウント"""
@@ -652,63 +657,77 @@ class MyAI(Alg3D):
         return opponent_double_reach_lines
     
     def check_opponent_winning_moves_after_my_move(self, board: Board, x: int, y: int, z: int, player: int) -> int:
-        """指定位置に自分の石を置いた後、相手が勝利できる手の数をカウント"""
+        """指定位置に自分の石を置いた後、相手が勝利できる手の数をカウント（メモリ効率版）"""
         opponent = 3 - player
-        
-        # 仮想的に自分の石を置く
-        temp_board = [[[board[z][y][x] for x in range(4)] for y in range(4)] for z in range(4)]
-        temp_board[z][y][x] = player
-        
-        # 相手が勝利できる手の数をカウント
         winning_moves_count = 0
+        
+        # 仮想的に自分の石を置く（1箇所だけ変更）
+        original_value = board[z][y][x]
+        board[z][y][x] = player
         
         for opp_x in range(4):
             for opp_y in range(4):
-                if self.can_place_stone(temp_board, opp_x, opp_y):
-                    opp_z = self.get_height(temp_board, opp_x, opp_y)
+                if self.can_place_stone(board, opp_x, opp_y):
+                    opp_z = self.get_height(board, opp_x, opp_y)
                     
-                    # 仮想的に相手の石を置いてみる
-                    temp_board2 = [[[temp_board[z][y][x] for x in range(4)] for y in range(4)] for z in range(4)]
-                    temp_board2[opp_z][opp_y][opp_x] = opponent
+                    # 仮想的に相手の石を置いてみる（1箇所だけ変更）
+                    original_opp_value = board[opp_z][opp_y][opp_x]
+                    board[opp_z][opp_y][opp_x] = opponent
                     
-                    if self.check_win(temp_board2, opp_x, opp_y, opp_z, opponent):
+                    if self.check_win(board, opp_x, opp_y, opp_z, opponent):
                         winning_moves_count += 1
+                    
+                    # 元に戻す
+                    board[opp_z][opp_y][opp_x] = original_opp_value
+        
+        # 元に戻す
+        board[z][y][x] = original_value
         
         return winning_moves_count
     
     def get_opponent_max_score_after_my_move(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
-        """指定位置に自分の石を置いた後、相手が得られる最大点数を取得"""
+        """指定位置に自分の石を置いた後、相手が得られる最大点数を取得（メモリ効率版）"""
         opponent = 3 - player
-        
-        # 仮想的に自分の石を置く
-        temp_board = [[[board[z][y][x] for x in range(4)] for y in range(4)] for z in range(4)]
-        temp_board[z][y][x] = player
-        
-        # 相手が得られる最大点数を計算
         max_score = -1
+        
+        # 仮想的に自分の石を置く（1箇所だけ変更）
+        original_value = board[z][y][x]
+        board[z][y][x] = player
         
         for opp_x in range(4):
             for opp_y in range(4):
-                if self.can_place_stone(temp_board, opp_x, opp_y):
-                    opp_z = self.get_height(temp_board, opp_x, opp_y)
-                    score = self.evaluate_position(temp_board, opp_x, opp_y, opp_z, opponent, depth)
+                if self.can_place_stone(board, opp_x, opp_y):
+                    opp_z = self.get_height(board, opp_x, opp_y)
+                    score = self.evaluate_position(board, opp_x, opp_y, opp_z, opponent, depth)
                     max_score = max(max_score, score)
+        
+        # 元に戻す
+        board[z][y][x] = original_value
         
         return max_score if max_score > -1 else 0
     
     def evaluate_position(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
-        """指定位置の重み（点数）を計算"""
+        """指定位置の重み（点数）を計算（メモリ効率版）"""
+        # キャッシュキーを生成（盤面の簡易ハッシュ）
+        cache_key = self._get_board_hash(board, x, y, z, player, depth)
+        
+        if cache_key in self._evaluation_cache:
+            self._cache_hits += 1
+            return self._evaluation_cache[cache_key]
+        
+        self._cache_misses += 1
         score = 0
         
-        # 再帰の深さ制限（2手先まで）
+        # 再帰の深さ制限（2手先まで、メモリ効率を保ちつつ探索を維持）
         if depth >= 2:
+            self._evaluation_cache[cache_key] = score
             return score
         
         # depth別の重み設定
         is_my_turn = (depth % 2 == 0)  # 自分の手（depth偶数）か相手の手（depth奇数）か
         
         # 減衰率の計算
-        decay_rate = 0.8 ** depth  # depth=0: 1.0, depth=1: 0.8
+        decay_rate = 0.95 ** depth  # depth=0: 1.0, depth=1: 0.8
         
         # 1. アクセス可能なライン数による基本点
         lines = self.count_potential_lines(board, x, y, z, player)
@@ -752,22 +771,17 @@ class MyAI(Alg3D):
             else:
                 score -= mixed_opponent_stones * 2 * decay_rate  # 相手の手: 相手の石1個 = 2点減点 * 減衰率
         
-        # 3. 位置ボーナス
-        position_bonus = 0
-        
-        # 角の場合は2点
-        if (x == 0 or x == 3) and (y == 0 or y == 3):
-            position_bonus += 2
-        
-        # (x == 1 or x == 2) and (y == 1 or y == 2) で2点
-        if ((x == 1 or x == 2) and (y == 1 or y == 2)) or ((x == 1 or x == 2) and (z == 1 or z == 2)) or ((y == 1 or y == 2) and (z == 1 or z == 2)):
-            position_bonus += 2
-        
-        # (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2) でさらに2点
-        if (x == 1 or x == 2) and (y == 1 or y == 2) and (z == 1 or z == 2):
-            position_bonus += 2
-        
-        score += position_bonus * decay_rate
+        # 3. 角と中央の4マスの位置ボーナス
+        if (x == 0 or x == 3) and (y == 0 or y == 3):  # 角の4マス
+            if is_my_turn:
+                score += 2 * decay_rate  # 自分の手: 角 = 2点ボーナス * 減衰率
+            else:
+                score += 2 * decay_rate  # 相手の手: 角 = 2点ボーナス * 減衰率
+        elif (x == 1 or x == 2) and (y == 1 or y == 2):  # 中央の4マス
+            if is_my_turn:
+                score += 2 * decay_rate  # 自分の手: 中央 = 2点ボーナス * 減衰率
+            else:
+                score += 2 * decay_rate  # 相手の手: 中央 = 2点ボーナス * 減衰率
         
         # 4. ダブルリーチ報酬（自分の石が2個以上あるラインが複数ある場合）
         double_reach_lines = self.count_double_reach_lines(board, x, y, z, player)
@@ -801,11 +815,30 @@ class MyAI(Alg3D):
             if depth < 2:
                 opponent_max_score = self.get_opponent_max_score_after_my_move(board, x, y, z, player, depth + 1)
                 if is_my_turn:
-                    score -= opponent_max_score * 0.5 * decay_rate  # 自分の手: 相手の最大点数 * 0.5を減点 * 減衰率
+                    score -= opponent_max_score  * 0.9  # 自分の手: 相手の最大点数 * 0.5を減点 * 減衰率
                 else:
-                    score -= opponent_max_score * 0.5 * decay_rate   # 相手の手: 相手の最大点数 * 0.5を減点 * 減衰率
+                    score -= opponent_max_score  * 0.9  # 相手の手: 相手の最大点数 * 0.5を減点 * 減衰率
         
+        # キャッシュに保存
+        self._evaluation_cache[cache_key] = score
         return score
+    
+    def _get_board_hash(self, board: Board, x: int, y: int, z: int, player: int, depth: int) -> str:
+        """盤面の簡易ハッシュを生成（メモリ効率化のため）"""
+        # 重要な部分のみをハッシュ化（全盤面ではなく、周辺のみ）
+        hash_parts = []
+        
+        # 周辺3x3x3の範囲のみをハッシュ化
+        for dz in range(-1, 2):
+            for dy in range(-1, 2):
+                for dx in range(-1, 2):
+                    nx, ny, nz = x + dx, y + dy, z + dz
+                    if 0 <= nx < 4 and 0 <= ny < 4 and 0 <= nz < 4:
+                        hash_parts.append(str(board[nz][ny][nx]))
+                    else:
+                        hash_parts.append('X')  # 範囲外
+        
+        return f"{player}_{depth}_{x}_{y}_{z}_{''.join(hash_parts)}"
     
     def find_highest_line_access_move(self, board: Board, player: int):
         """最も高い重み（点数）の位置を探す"""
@@ -841,17 +874,23 @@ class MyAI(Alg3D):
             print()
     
     def find_winning_move(self, board: Board, player: int):
-        """勝利できる手を探す"""
+        """勝利できる手を探す（メモリ効率版）"""
         for x in range(4):
             for y in range(4):
                 if self.can_place_stone(board, x, y):
-                    # 仮想的に石を置いてみる
-                    temp_board = [[[board[z][y][x] for x in range(4)] for y in range(4)] for z in range(4)]
                     z = self.get_height(board, x, y)
-                    temp_board[z][y][x] = player
                     
-                    if self.check_win(temp_board, x, y, z, player):
+                    # 仮想的に石を置いてみる（1箇所だけ変更）
+                    original_value = board[z][y][x]
+                    board[z][y][x] = player
+                    
+                    if self.check_win(board, x, y, z, player):
+                        # 元に戻す
+                        board[z][y][x] = original_value
                         return (x, y)
+                    
+                    # 元に戻す
+                    board[z][y][x] = original_value
         return None
     
     def find_center_move(self, board: Board):
