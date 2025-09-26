@@ -1,6 +1,6 @@
 from typing import List, Tuple
-# from local_driver import Alg3D, Board # ローカル検証用
-from framework import Alg3D, Board # 本番用
+from local_driver import Alg3D, Board # ローカル検証用
+# from framework import Alg3D, Board # 本番用
 
 class MyAI(Alg3D):
     def get_move(
@@ -738,7 +738,7 @@ class MyAI(Alg3D):
         
         return reward
     
-    def get_max_opponent_reward(self, board: Board, x: int, y: int, z: int, opponent: int) -> int:
+    def get_max_opponent_reward(self, board: Board, x: int, y: int, z: int, opponent: int, depth: int = 0) -> int:
         """相手が得られる最大報酬を計算"""
         # 仮想的に自分の石を置く
         temp_board = [[[board[z][y][x] for x in range(4)] for y in range(4)] for z in range(4)]
@@ -751,7 +751,8 @@ class MyAI(Alg3D):
             for opp_y in range(4):
                 if self.can_place_stone(temp_board, opp_x, opp_y):
                     opp_z = self.get_height(temp_board, opp_x, opp_y)
-                    opponent_reward = self.calculate_reward(temp_board, opp_x, opp_y, opp_z, opponent)
+                    # 修正: evaluate_position を再帰呼び出し
+                    opponent_reward = self.evaluate_position(temp_board, opp_x, opp_y, opp_z, opponent, depth + 1)
                     max_reward = max(max_reward, opponent_reward)
         
         return max_reward
@@ -759,24 +760,22 @@ class MyAI(Alg3D):
     def evaluate_position(self, board: Board, x: int, y: int, z: int, player: int, depth: int = 0) -> int:
         """指定位置の重み（点数）を計算"""
         # 再帰の深さ制限（4手先まで）
-        if depth >= 6:
+        if depth >= 3:
             return 0
         
-        # depth別の重み設定
-        is_my_turn = (depth % 2 == 0)  # 自分の手（depth偶数）か相手の手（depth奇数）か
-        
         # 減衰率の計算
-        decay_rate = 1.1 ** depth  # depth=0: 1.0, depth=1: 0.8, depth=2: 0.64, depth=3: 0.512
+        decay_rate = 0.9 ** depth  # depth=0: 1.0, depth=1: 0.9, depth=2: 0.81, depth=3: 0.729
         
-        if is_my_turn:
-            # 自分のターン: 報酬を加点
-            reward = self.calculate_reward(board, x, y, z, player)
-            return reward * decay_rate
-        else:
-            # 相手のターン: 相手の最大報酬を減点
-            opponent = 3 - player
-            max_opponent_reward = self.get_max_opponent_reward(board, x, y, z, opponent)
-            return -max_opponent_reward * decay_rate
+        # 自分の報酬を計算
+        my_reward = self.calculate_reward(board, x, y, z, player)
+        
+        # 相手の最大報酬を計算（常に再帰）
+        opponent = 3 - player
+        max_opponent_reward = self.get_max_opponent_reward(board, x, y, z, opponent, depth)
+        
+        # 自分の報酬 - 相手の最大報酬（重み付き）
+        result = my_reward - max_opponent_reward * 0.5
+        return result * decay_rate
     
     def find_highest_line_access_move(self, board: Board, player: int):
         """最も高い重み（点数）の位置を探す"""
